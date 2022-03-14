@@ -1,25 +1,32 @@
-include ../../SLmake.inc
+cdir := BLACS/TESTING
 
 #  ---------------------------------------------------------------------
 #  The file tools.f contains some LAPACK routines that the tester calls.
 #  If you have ScaLAPACK, you may point to your tools library instead
 #  of compiling this file.
 #  ---------------------------------------------------------------------
-tools = tools.o
+blacs_tools = \
+	$(cdir)/tools.o
 
-exe : all
-ctest : xCbtest
-ftest : xFbtest
-all : xCbtest xFbtest
+blacs_tst = \
+	$(cdir)/blacstest.o \
+	$(cdir)/btprim.o
 
-obj = blacstest.o btprim.o
+blacsexe = \
+	$(cdir)/xCbtest \
+	$(cdir)/xFbtest
 
-xCbtest: $(obj) $(tools)
-	$(CC) -c $(CDEFS) $(CCFLAGS) -DBTCINTFACE Cbt.c
-	$(FCLOADER) $(FCLOADFLAGS) -o $@ $(obj) $(tools) Cbt.o ../../$(SCALAPACKLIB)
+blacsexe: $(blacsexe)
 
-xFbtest: $(obj) $(tools)
-	$(FCLOADER) $(FCLOADFLAGS) -o $@ $(obj) $(tools) ../../$(SCALAPACKLIB)
+$(cdir)/Cbt.o: $(cdir)/Cbt.c
+	$(CC) -c -o $@ $(CDEFS) $(CCFLAGS) -DBTCINTFACE $<
+
+# Putting SCALAPACKLIB in $^ presumes it is static (.a).
+$(cdir)/xCbtest: $(blacs_tst) $(blacs_tools) $(cdir)/Cbt.o $(SCALAPACKLIB)
+	$(FCLOADER) $(FCLOADFLAGS) -o $@ $^
+
+$(cdir)/xFbtest: $(blacs_tst) $(blacs_tools) $(SCALAPACKLIB)
+	$(FCLOADER) $(FCLOADFLAGS) -o $@ $^
 
 #  --------------------------------------------------------------------
 #  The files tools.f and blacstest.f are compiled without optimization.
@@ -30,19 +37,10 @@ xFbtest: $(obj) $(tools)
 #  trying to optimize such a large file.  We therefore insist that it
 #  also not be optimized.
 #  --------------------------------------------------------------------
-tools.o : tools.f
-	$(FC) $(NOOPT) -c $*.f
+$(cdir)/tools.o: $(cdir)/tools.f
+	$(FC) $(NOOPT) -c -o $@ $<
 
-blacstest.o : blacstest.f
-	$(FC) $(NOOPT) -c $*.f
+$(cdir)/blacstest.o: $(cdir)/blacstest.f
+	$(FC) $(NOOPT) -c -o $@ $<
 
-btprim.o : btprim.f
-	$(FC) -c $(FCFLAGS) $*.f
-
-clean :
-	rm -f $(obj) tools.o Cbt.o xCbtest xFbtest
-
-.f.o: ; $(FC) -c $(FCFLAGS) $*.f
-
-.c.o:
-	$(CC) -c $(CDEFS) $(CCFLAGS) $<
+cleanexe += $(blacsexe) $(blacs_tools) $(blacs_tst) $(cdir)/Cbt.o

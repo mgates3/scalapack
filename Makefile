@@ -6,19 +6,11 @@
 #
 #  Purpose:         Top-level Makefile
 #
-#  Creation date:   March 20, 1995
-#
-#  Modified:        February 15, 2000
-#
 #  Send bug reports, comments or suggestions to scalapack@cs.utk.edu
 #
 ############################################################################
-
-include SLmake.inc
-
-PRECISIONS = single double complex complex16
-
-############################################################################
+#
+### todo: F77 changed to FC?
 #
 #  The library can be set up to include routines for any combination of the
 #  four PRECISIONS.  First, modify the ARCH, ARCHFLAGS, RANLIB, F77, CC,
@@ -47,66 +39,133 @@ PRECISIONS = single double complex complex16
 #
 ############################################################################
 
-all: lib exe example
+include SLmake.inc
 
-SCALAPACKLIBS=toolslib pblaslib redistlib scalapacklib
+# Set default PRECISIONS if not in SLmake.inc and decode.
+PRECISIONS ?= single double complex complex16
 
-$(SCALAPACKLIBS): blacslib
-lib: $(SCALAPACKLIBS)
+ifneq ($(findstring single, $(PRECISIONS)),)
+    single = 1
+endif
+ifneq ($(findstring double, $(PRECISIONS)),)
+    double = 1
+endif
+ifneq ($(findstring complex, $(PRECISIONS)),)
+    complex = 1
+endif
+ifneq ($(findstring complex16, $(PRECISIONS)),)
+    complex16 = 1
+endif
 
-exe: blacsexe pblasexe redistexe scalapackexe
+# Set default library if not in SLmake.inc, and select static or shared.
+SCALAPACKLIB_a  ?= libscalapack.a
+SCALAPACKLIB_so ?= libscalapack.so
+
+ifeq ($(shared),1)
+    SCALAPACKLIB ?= $(SCALAPACKLIB_so)
+    CCFLAGS += -fPIC
+    FCFLAGS += -fPIC
+    LDFLAGS += -fPIC
+else
+    SCALAPACKLIB ?= $(SCALAPACKLIB_a)
+endif
+
+############################################################################
+# Targets
+
+.PHONY: all lib exe clean
+
+all: lib exe #example
+
+lib: $(SCALAPACKLIB)
+
+exe: blacsexe #pblasexe redistexe scalapackexe
 
 clean: cleanlib cleanexe cleanexample
 
-blacslib:
-	( cd BLACS; $(MAKE) lib )
-
-pblaslib:
-	( cd PBLAS/SRC; $(MAKE) $(PRECISIONS) )
-
-redistlib:
-	( cd REDIST/SRC; $(MAKE) integer $(PRECISIONS) )
-
-scalapacklib:
-	( cd SRC; $(MAKE) $(PRECISIONS) )
-
-toolslib:
-	( cd TOOLS; $(MAKE) $(PRECISIONS) )
-
-blacsexe:
-	( cd BLACS; $(MAKE) tester )
-
-pblasexe:
-	( cd PBLAS/TESTING; $(MAKE) $(PRECISIONS) )
-	( cd PBLAS/TIMING; $(MAKE) $(PRECISIONS) )
-
-scalapackexe:
-	( cd TESTING/LIN; $(MAKE) $(PRECISIONS) )
-	( cd TESTING/EIG; $(MAKE) $(PRECISIONS) )
-
-redistexe:
-	( cd REDIST/TESTING; $(MAKE) integer $(PRECISIONS) )
-
-example:
-	( cd EXAMPLE; $(MAKE) $(PRECISIONS) )
-
-cleanexe:
-	( cd PBLAS/TESTING; $(MAKE) clean )
-	( cd PBLAS/TIMING; $(MAKE) clean )
-	( cd TESTING/LIN; $(MAKE) clean )
-	( cd TESTING/EIG; $(MAKE) clean )
-	( cd REDIST/TESTING; $(MAKE) clean )
-	( cd BLACS/TESTING; $(MAKE) clean )
-	( cd TESTING; rm -f x* )
-
+cleanlib :=
 cleanlib:
-	( cd BLACS; $(MAKE) clean )
-	( cd PBLAS/SRC; $(MAKE) clean )
-	( cd SRC; $(MAKE) clean )
-	( cd TOOLS; $(MAKE) clean )
-	( cd REDIST/SRC; $(MAKE) clean )
-	( rm -f $(SCALAPACKLIB) )
+	-rm -f $(SCALAPACKLIB)
+	-rm -f $(lib_obj)
+	-rm -f $(cleanlib)
 
+cleanexe :=
+cleanexe:
+	-rm -f $(cleanexe)
+
+cleanexample :=
 cleanexample:
-	( cd EXAMPLE; $(MAKE) clean )
+	-rm -f $(cleanexample)
 
+############################################################################
+# Include subdirectories.
+# Each subdir adds to $(lib_obj), $(cleanlib), $(cleanexe), $(cleanexample),
+# which must be immediate variables defined by := for += to work properly.
+
+lib_obj :=
+
+subdirs := \
+	BLACS/SRC/Makefile.inc \
+	BLACS/TESTING/Makefile.inc \
+	# end
+
+-include $(subdirs)
+
+############################################################################
+# File rules
+
+# Remove all built-in rules.
+.SUFFIXES:
+
+.DELETE_ON_ERROR:
+
+$(SCALAPACKLIB): $(lib_obj)
+
+# Build static libraries.
+%.a:
+	$(ARCH) $(ARCHFLAGS) $@ $^
+	$(RANLIB) $@
+
+# Build shared libraries.
+%.so:
+	$(FC) $(LDFLAGS) -shared -o $@ $^ $(LIBS)
+
+# Compile Fortran sources.
+%.o: %.f
+	$(FC) -c -o $@ $(FCFLAGS) $<
+
+%.o: %.f90
+	$(FC) -c -o $@ $(FCFLAGS) $<
+
+# Compile C sources.
+%.o: %.c
+	$(CC) -c -o $@ $(CDEFS) $(CCFLAGS) $<
+
+# Special rule for BLACS to build C interfaces with _c suffix.
+%_c.o: %.c
+	$(CC) -c -o $@ $(CDEFS) $(CCFLAGS) -DCallFromC $<
+
+############################################################################
+# Debugging
+
+echo:
+	@echo "CC      = $(CC)"
+	@echo "FC      = $(FC)"
+	@echo "ARCH    = $(ARCH)"
+	@echo "RANLIB  = $(RANLIB)"
+	@echo
+	@echo "CDEFS   = $(CDEFS)"
+	@echo "CCFLAGS = $(CCFLAGS)"
+	@echo "FCFLAGS = $(FCFLAGS)"
+	@echo
+	@echo "SCALAPACKLIB_a  = $(SCALAPACKLIB)"
+	@echo "SCALAPACKLIB_a  = $(SCALAPACKLIB)"
+	@echo "SCALAPACKLIB_a  = $(SCALAPACKLIB)"
+	@echo
+	@echo "lib_obj = $(lib_obj)"
+	@echo
+	@echo "PRECISIONS = $(PRECISIONS)"
+	@echo "single     = $(single)"
+	@echo "double     = $(double)"
+	@echo "complex    = $(complex)"
+	@echo "complex16  = $(complex16)"
